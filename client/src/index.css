@@ -60,7 +60,7 @@ button:not(:disabled) { cursor: pointer; }
 
 .gift-stage { isolation: isolate; }
 .gift-message { color: var(--gift-color); text-shadow: none; }
-.love-float { color: var(--gift-color); opacity: 0; text-shadow: 0 0 8px color-mix(in srgb, var(--gift-color), white 18%), 0 0 20px color-mix(in srgb, var(--gift-color), transparent 25%); will-change: transform, opacity; transform: translate3d(0, 0, 0); backface-visibility: hidden; animation-name: love-rise; animation-timing-function: linear; animation-fill-mode: both; }
+.love-float { color: var(--gift-color); opacity: 0; font-family: "Vazirmatn", ui-sans-serif, system-ui, sans-serif; font-size: .9rem; font-weight: 900; letter-spacing: .14em; line-height: 1; text-shadow: 0 2px 14px color-mix(in srgb, var(--gift-color), transparent 42%), 0 0 2px rgb(255 255 255 / 45%); will-change: transform, opacity; transform: translate3d(0, 0, 0); backface-visibility: hidden; animation-name: love-rise; animation-timing-function: linear; animation-fill-mode: both; }
 
 @keyframes love-rise {
   0% { opacity: 0; transform: translate3d(0, 0, 0); }

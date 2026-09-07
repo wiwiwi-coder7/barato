@@ -121,11 +121,10 @@ export default function GiftPage() {
         {floatingWords.map(word => (
           <span
             key={word.id}
-            className="love-float absolute bottom-[-3rem] whitespace-nowrap font-black tracking-[0.22em]"
+            className="love-float absolute bottom-[-3rem] whitespace-nowrap"
             style={{
               left: `${word.left}%`,
               animationDuration: `${word.duration}s`,
-              fontSize: `${word.size}rem`,
             } as React.CSSProperties}
             onAnimationEnd={() => setFloatingWords(current => current.filter(item => item.id !== word.id))}
           >

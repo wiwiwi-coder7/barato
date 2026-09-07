@@ -6,6 +6,9 @@ describe("Barato locale catalog", () => {
     expect(translateText("دوستت دارم", "fa")).toBe("دوستت دارم");
     expect(translateText("دوستت دارم", "en")).toBe("I love you");
     expect(translateText("دوستت دارم", "ar")).toBe("أحبك");
+    expect(translateText("I LOVE YOU", "fa")).toBe("I LOVE YOU");
+    expect(translateText("I LOVE YOU", "en")).toBe("I LOVE YOU");
+    expect(translateText("I LOVE YOU", "ar")).toBe("I LOVE YOU");
     expect(translateText("پنل مدیریت", "en")).toBe("Admin panel");
     expect(translateText("مثلاً نرگس", "en")).toBe("For example, Audrey");
     expect(translateText("مثلاً نرگس", "ar")).toBe("مثلاً رقية");
