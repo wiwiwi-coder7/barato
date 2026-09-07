@@ -5,7 +5,6 @@ import type { BirthdayCakePreset, BirthdayPublicSettings } from "./publicBirthda
 const API_ROOT = "https://qqafgmkxqzjpppczzrac.supabase.co/functions/v1/barato-api";
 const PUBLISHABLE_KEY = "sb_publishable_Wz1ZzslBy-YqnHlU9CxG-g_MpIADxML";
 const ADMIN_TOKEN = "barato_admin_token";
-const IMAGE_TOKEN = "barato_image_token";
 
 type RequestOptions = { method?: "GET" | "POST" | "PATCH" | "DELETE"; input?: unknown; query?: Record<string, string> };
 
@@ -24,12 +23,11 @@ export type GiftLinkEvent = {
   createdAt: string;
 };
 
-function readAdminToken() { return localStorage.getItem(ADMIN_TOKEN) ?? ""; }
-function readImageToken() { return localStorage.getItem(IMAGE_TOKEN) ?? ""; }
+function readAdminToken() { return sessionStorage.getItem(ADMIN_TOKEN) ?? ""; }
 function endpoint(action: string, query?: Record<string, string>) { const value = new URL(API_ROOT); value.searchParams.set("action", action); Object.entries(query ?? {}).forEach(([key, item]) => value.searchParams.set(key, item)); return value.toString(); }
 
 async function api<T = any>(action: string, options: RequestOptions = {}): Promise<T> {
-  const response = await fetch(endpoint(action, options.query), { method: options.method ?? "GET", headers: { apikey: PUBLISHABLE_KEY, "Content-Type": "application/json", ...(readAdminToken() ? { "x-admin-token": readAdminToken() } : {}), ...(readImageToken() ? { "x-image-token": readImageToken() } : {}) }, ...(options.input === undefined ? {} : { body: JSON.stringify(options.input) }) });
+  const response = await fetch(endpoint(action, options.query), { method: options.method ?? "GET", headers: { apikey: PUBLISHABLE_KEY, "Content-Type": "application/json", ...(readAdminToken() ? { "x-admin-token": readAdminToken() } : {}) }, ...(options.input === undefined ? {} : { body: JSON.stringify(options.input) }) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new BaratoApiError(response.status, payload.error ?? "درخواست انجام نشد.");
   return payload as T;
@@ -42,10 +40,9 @@ function mutationHook<T = any>(key: string, action: string, method: RequestOptio
   return (options?: any) => useMutation<T, Error, any>({ mutationKey: [key], mutationFn: input => api(action, before ? before(input) : { method, input }).then(mapper), ...options });
 }
 
-function useAdminLogin(options?: any) { return useMutation<any, Error, { password: string }>({ mutationKey: ["admin-login"], mutationFn: async input => { const result = await api<any>("admin-login", { method: "POST", input }); localStorage.setItem(ADMIN_TOKEN, result.token); return { success: true }; }, ...options }); }
-function useAdminLogout(options?: any) { return useMutation<any, Error, void>({ mutationKey: ["admin-logout"], mutationFn: async () => { try { await api("admin-logout", { method: "POST" }); } finally { localStorage.removeItem(ADMIN_TOKEN); } return { success: true }; }, ...options }); }
-function useAdminPasswordChange(options?: any) { return useMutation<any, Error, { currentPassword: string; newPassword: string; confirmPassword: string }>({ mutationKey: ["admin-change-password"], mutationFn: async input => { await api("admin-change-password", { method: "POST", input }); localStorage.removeItem(ADMIN_TOKEN); return { success: true }; }, ...options }); }
-function useImageUnlock(options?: any) { return useMutation<any, Error, { password: string }>({ mutationKey: ["unlock-image"], mutationFn: async input => { const result = await api<any>("unlock-image", { method: "POST", input }); localStorage.setItem(IMAGE_TOKEN, result.token); return { success: true }; }, ...options }); }
+function useAdminLogin(options?: any) { return useMutation<any, Error, { password: string }>({ mutationKey: ["admin-login"], mutationFn: async input => { const result = await api<any>("admin-login", { method: "POST", input }); sessionStorage.setItem(ADMIN_TOKEN, result.token); return { success: true }; }, ...options }); }
+function useAdminLogout(options?: any) { return useMutation<any, Error, void>({ mutationKey: ["admin-logout"], mutationFn: async () => { try { await api("admin-logout", { method: "POST" }); } finally { sessionStorage.removeItem(ADMIN_TOKEN); } return { success: true }; }, ...options }); }
+function useAdminPasswordChange(options?: any) { return useMutation<any, Error, { currentPassword: string; newPassword: string; confirmPassword: string }>({ mutationKey: ["admin-change-password"], mutationFn: async input => { await api("admin-change-password", { method: "POST", input }); sessionStorage.removeItem(ADMIN_TOKEN); return { success: true }; }, ...options }); }
 function useAdminLinkEvents(input?: { giftId?: number }, options?: any) { return useQuery<{ events: GiftLinkEvent[] }>({ queryKey: ["admin-link-events", input?.giftId], queryFn: () => api("admin-link-events", { query: { id: String(input?.giftId) } }), enabled: Boolean(input?.giftId) && options?.enabled !== false, ...options }); }
 
 export const standaloneApi = {
@@ -54,7 +51,6 @@ export const standaloneApi = {
     create: { useMutation: mutationHook<CreatedGiftRecord>("gift-create", "create-gift", "POST", payload => ({ ...payload.gift, creatorToken: payload.creatorToken })) },
     getByToken: { useQuery: queryHook("gift-token", "get-gift", payload => payload.gift) },
     recordVisit: { useMutation: mutationHook("gift-visit", "record-visit") },
-    unlockImage: { useMutation: useImageUnlock },
     uploadImage: { useMutation: mutationHook("gift-image", "upload-image") },
     attachImage: { useMutation: mutationHook<GiftRecord>("gift-attach-image", "attach-image", "POST", payload => payload.gift) },
   },
@@ -89,7 +85,7 @@ export const standaloneApi = {
   },
   auth: {
     me: { useQuery: queryHook("auth-me", "admin-session", () => null) },
-    logout: { useMutation: (options?: any) => useMutation<any, Error, void>({ mutationKey: ["auth-logout"], mutationFn: async () => { try { await api("admin-logout", { method: "POST" }); } finally { localStorage.removeItem(ADMIN_TOKEN); } return { success: true }; }, ...options }) },
+    logout: { useMutation: (options?: any) => useMutation<any, Error, void>({ mutationKey: ["auth-logout"], mutationFn: async () => { try { await api("admin-logout", { method: "POST" }); } finally { sessionStorage.removeItem(ADMIN_TOKEN); } return { success: true }; }, ...options }) },
   },
   useUtils() {
     const queryClient = useQueryClient();

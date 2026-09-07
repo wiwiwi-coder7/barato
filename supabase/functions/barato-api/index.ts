@@ -7,9 +7,14 @@ import { clientMetadataFromRequest, eventRetentionCutoff } from "./linkEventSecu
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://wiwiwi-coder7.github.io",
-  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-admin-token, x-image-token",
+  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-admin-token",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-  "Content-Type": "application/json",
+  "Access-Control-Max-Age": "600",
+  "Cache-Control": "no-store",
+  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Content-Type": "application/json; charset=utf-8",
 };
 const url = Deno.env.get("SUPABASE_URL")!;
 const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -20,7 +25,6 @@ function json(body: unknown, status = 200) { return new Response(JSON.stringify(
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
 function token() { return randomBytes(32).toString("base64url"); }
 function adminToken(request: Request) { return request.headers.get("x-admin-token") ?? ""; }
-function imageToken(request: Request) { return request.headers.get("x-image-token") ?? ""; }
 function toGift(row: Record<string, unknown>) {
   return { id: Number(row.id), name: row.name, message: row.message, personalMessage: row.personal_message, imageKey: row.image_key, color: row.color, theme: row.theme, token: row.token, createdAt: row.created_at, updatedAt: row.updated_at, expiresAt: row.expires_at, experience: row.experience ?? "gift", birthdayAge: row.birthday_age, birthdayCakeKey: row.birthday_cake_key, birthdayHasBuiltinCandles: Boolean(row.birthday_has_builtin_candles) };
 }
@@ -43,9 +47,24 @@ function verify(password: string, stored: string) {
 function passwordHash(password: string) { const salt = randomBytes(16).toString("hex"); return `scrypt$${salt}$${scryptSync(password, salt, 64).toString("hex")}`; }
 function isValidAdminPassword(password: unknown) { return typeof password === "string" && password.length >= 12 && password.length <= 128; }
 function isValidImageKey(value: unknown) { return typeof value === "string" && /^[A-Za-z0-9._/-]+$/.test(value); }
-function isValidBirthdayPrompt(value: unknown) { return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 120; }
+function isSafeText(value: unknown, maxLength: number, allowEmpty = false) {
+  return typeof value === "string" && value.length <= maxLength && (allowEmpty || value.trim().length > 0) && !/[<>\u0000-\u001F\u007F]/.test(value);
+}
+function isValidBirthdayPrompt(value: unknown) { return isSafeText(value, 120); }
 function isValidBirthdayColor(value: unknown) { return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value); }
-function isValidCakeLabel(value: unknown) { return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 100; }
+function isValidCakeLabel(value: unknown) { return isSafeText(value, 100); }
+function isValidExpiration(value: unknown) {
+  if (value == null || value === "") return true;
+  if (typeof value !== "string" && !(value instanceof Date)) return false;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && timestamp > Date.now();
+}
+function imageHasRequiredExpiration(imageKey: unknown, expiresAt: unknown) {
+  if (imageKey == null || imageKey === "") return true;
+  if (typeof expiresAt !== "string" && !(expiresAt instanceof Date)) return false;
+  const timestamp = new Date(expiresAt).getTime();
+  return Number.isFinite(timestamp) && timestamp > Date.now();
+}
 function isValidSortOrder(value: unknown) { return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 999; }
 async function birthdayPublicSettings() {
   const { data, error } = await db.from("birthday_public_settings").select("*").eq("setting_key", "public").single();
@@ -55,11 +74,13 @@ async function birthdayPublicSettings() {
 function validGift(input: Record<string, unknown>) {
   const birthday = input.experience === "birthday";
   const birthdayAge = Number(input.birthdayAge);
-  return typeof input.name === "string" && input.name.trim().length > 0 && input.name.trim().length <= 80 &&
-    typeof input.message === "string" && input.message.trim().length > 0 && input.message.trim().length <= 160 &&
-    (input.personalMessage == null || (typeof input.personalMessage === "string" && input.personalMessage.length <= 1000)) &&
+  return isSafeText(input.name, 80) &&
+    isSafeText(input.message, 160) &&
+    (input.personalMessage == null || isSafeText(input.personalMessage, 1000, true)) &&
     (input.imageKey == null || (typeof input.imageKey === "string" && /^[A-Za-z0-9._/-]+$/.test(input.imageKey))) &&
     typeof input.color === "string" && colors.has(input.color.toUpperCase()) && (input.theme === "light" || input.theme === "dark") &&
+    isValidExpiration(input.expiresAt) &&
+    imageHasRequiredExpiration(input.imageKey, input.expiresAt) &&
     (input.experience == null || input.experience === "gift" || birthday) &&
     (!birthday || (Number.isInteger(birthdayAge) && birthdayAge >= 0 && birthdayAge <= 99 && typeof input.birthdayCakeKey === "string" && /^[A-Za-z0-9._/-]+$/.test(input.birthdayCakeKey) && typeof input.birthdayHasBuiltinCandles === "boolean"));
 }
@@ -70,12 +91,6 @@ async function isAdmin(request: Request) {
   return Boolean(data);
 }
 async function requireAdmin(request: Request) { if (!(await isAdmin(request))) throw new Error("ADMIN_REQUIRED"); }
-async function hasImageUnlock(request: Request) {
-  const value = imageToken(request);
-  if (!value) return false;
-  const { data } = await db.from("gift_unlock_sessions").select("id").eq("token_hash", hash(value)).gt("expires_at", new Date().toISOString()).maybeSingle();
-  return Boolean(data);
-}
 function errorStatus(error: unknown) { return error instanceof Error && error.message === "ADMIN_REQUIRED" ? 401 : 500; }
 function makeKey(mime: string) { return `${crypto.randomUUID()}.${mime === "image/jpeg" ? "jpg" : mime === "image/png" ? "png" : "webp"}`; }
 
@@ -180,21 +195,9 @@ Deno.serve(async request => {
       return json({ content: data ? toBirthday(data) : null });
     }
 
-    if (action === "unlock-image" && request.method === "POST") {
-      const body = await request.json();
-      const { data, error } = await db.from("admin_config").select("password_hash,gift_password_hash").eq("id", 1).single();
-      if (error) throw new Error(error.message);
-      if (typeof body.password !== "string" || (!verify(body.password, data.gift_password_hash) && !verify(body.password, data.password_hash))) return json({ error: "INVALID_PASSWORD" }, 401);
-      const value = token(); const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-      const { error: sessionError } = await db.from("gift_unlock_sessions").insert({ token_hash: hash(value), expires_at: expiresAt });
-      if (sessionError) throw new Error(sessionError.message);
-      return json({ token: value, expiresAt });
-    }
-
     if (action === "upload-image" && request.method === "POST") {
-      if (!(await isAdmin(request)) && !(await hasImageUnlock(request))) return json({ error: "IMAGE_UNLOCK_REQUIRED" }, 403);
       const body = await request.json();
-      if (!["image/jpeg", "image/png", "image/webp"].includes(body.mimeType) || typeof body.base64 !== "string" || body.base64.length > 1_400_000) return json({ error: "INVALID_IMAGE" }, 400);
+      if (!["image/jpeg", "image/png", "image/webp"].includes(body.mimeType) || typeof body.base64 !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.base64) || body.base64.length > 1_400_000) return json({ error: "INVALID_IMAGE" }, 400);
       const bytes = Buffer.from(body.base64, "base64");
       if (!bytes.length || bytes.length > 1_000_000) return json({ error: "INVALID_IMAGE" }, 400);
       const key = makeKey(body.mimeType);
@@ -205,10 +208,10 @@ Deno.serve(async request => {
 
     if (action === "attach-image" && request.method === "POST") {
       const body = await request.json();
-      if (typeof body.giftToken !== "string" || typeof body.creatorToken !== "string" || typeof body.imageKey !== "string" || !/^[A-Za-z0-9._/-]+$/.test(body.imageKey)) return json({ error: "INVALID_IMAGE_ATTACHMENT" }, 400);
+      if (typeof body.giftToken !== "string" || typeof body.creatorToken !== "string" || typeof body.imageKey !== "string" || !/^[A-Za-z0-9._/-]+$/.test(body.imageKey) || (body.target !== undefined && body.target !== "gift" && body.target !== "birthdayCake")) return json({ error: "INVALID_IMAGE_ATTACHMENT" }, 400);
       const { data: gift, error: lookupError } = await db.from("gifts").select("id, expires_at, creator_token_expires_at").eq("token", body.giftToken).eq("creator_token_hash", hash(body.creatorToken)).maybeSingle();
       if (lookupError) throw new Error(lookupError.message);
-      if (!gift || (gift.expires_at && new Date(gift.expires_at).getTime() <= Date.now()) || !gift.creator_token_expires_at || new Date(gift.creator_token_expires_at).getTime() <= Date.now()) return json({ error: "IMAGE_ATTACH_UNAUTHORIZED" }, 403);
+      if (!gift || !gift.expires_at || new Date(gift.expires_at).getTime() <= Date.now() || !gift.creator_token_expires_at || new Date(gift.creator_token_expires_at).getTime() <= Date.now()) return json({ error: "IMAGE_REQUIRES_EXPIRATION" }, 400);
       const imageColumn = body.target === "birthdayCake" ? "birthday_cake_key" : "image_key";
       const { data, error } = await db.from("gifts").update({ [imageColumn]: body.imageKey, creator_token_hash: null, creator_token_expires_at: null, updated_at: new Date().toISOString() }).eq("id", gift.id).select().single();
       if (error) throw new Error(error.message);
@@ -297,7 +300,7 @@ Deno.serve(async request => {
     if (action === "admin-birthday") { await requireAdmin(request); const { data, error } = await db.from("birthday_contents").select("*").eq("owner", "edi").single(); if (error) throw new Error(error.message); return json({ content: toBirthday(data) }); }
     if (action === "admin-update-gift" && request.method === "PATCH") { await requireAdmin(request); const body = await request.json(); if (!Number.isInteger(body.id) || !validGift(body)) return json({ error: "INVALID_GIFT" }, 400); const { data, error } = await db.from("gifts").update({ name: body.name.trim(), message: body.message.trim(), personal_message: body.personalMessage?.trim() || null, image_key: body.imageKey ?? null, color: body.color, theme: body.theme, expires_at: body.expiresAt ? new Date(body.expiresAt).toISOString() : null, updated_at: new Date().toISOString() }).eq("id", body.id).select().maybeSingle(); if (error) throw new Error(error.message); return json({ gift: data ? toGift(data) : null }); }
     if (action === "admin-delete-gift" && request.method === "DELETE") { await requireAdmin(request); const id = Number(requestUrl.searchParams.get("id")); if (!Number.isInteger(id) || id < 1) return json({ error: "INVALID_GIFT" }, 400); const { error } = await db.from("gifts").delete().eq("id", id); if (error) throw new Error(error.message); return json({ success: true }); }
-    if (action === "admin-update-birthday" && request.method === "PATCH") { await requireAdmin(request); const body = await request.json(); if (![body.catText, body.cakeText, body.motorText].every(value => typeof value === "string" && value.trim().length > 0)) return json({ error: "INVALID_BIRTHDAY" }, 400); const { data, error } = await db.from("birthday_contents").update({ cat_text: body.catText.trim(), cake_text: body.cakeText.trim(), motor_text: body.motorText.trim(), cat_image_key: body.catImageKey ?? null, cake_image_key: body.cakeImageKey ?? null, motor_image_key: body.motorImageKey ?? null, updated_at: new Date().toISOString() }).eq("owner", "edi").select().single(); if (error) throw new Error(error.message); return json({ content: toBirthday(data) }); }
+    if (action === "admin-update-birthday" && request.method === "PATCH") { await requireAdmin(request); const body = await request.json(); if (![body.catText, body.cakeText, body.motorText].every(value => isSafeText(value, 2000)) || ![body.catImageKey, body.cakeImageKey, body.motorImageKey].every(value => value == null || isValidImageKey(value))) return json({ error: "INVALID_BIRTHDAY" }, 400); const { data, error } = await db.from("birthday_contents").update({ cat_text: body.catText.trim(), cake_text: body.cakeText.trim(), motor_text: body.motorText.trim(), cat_image_key: body.catImageKey ?? null, cake_image_key: body.cakeImageKey ?? null, motor_image_key: body.motorImageKey ?? null, updated_at: new Date().toISOString() }).eq("owner", "edi").select().single(); if (error) throw new Error(error.message); return json({ content: toBirthday(data) }); }
 
     return json({ error: "NOT_FOUND" }, 404);
   } catch (error) { return json({ error: error instanceof Error ? error.message : "UNKNOWN_ERROR" }, errorStatus(error)); }
