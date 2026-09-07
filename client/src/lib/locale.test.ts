@@ -7,6 +7,10 @@ describe("Barato locale catalog", () => {
     expect(translateText("دوستت دارم", "en")).toBe("I love you");
     expect(translateText("دوستت دارم", "ar")).toBe("أحبك");
     expect(translateText("پنل مدیریت", "en")).toBe("Admin panel");
+    expect(translateText("مثلاً نرگس", "en")).toBe("For example, Audrey");
+    expect(translateText("مثلاً نرگس", "ar")).toBe("مثلاً رقية");
+    expect(translateText("اگر تصویر اضافه کنید، تعیین تاریخ انقضا الزامی است.", "en")).toBe("If you add an image, you must set an expiration date.");
+    expect(translateText("اگر تصویر اضافه کنید، تعیین تاریخ انقضا الزامی است.", "ar")).toBe("إذا أضفت صورة، يجب تحديد تاريخ انتهاء الصلاحية.");
     expect(translateText("Go Home", "fa")).toBe("بازگشت به خانه");
   });
 
