@@ -44,15 +44,14 @@ export default function Home() {
   const isDarkTheme = theme === "dark";
   const warmApi = trpc.gifts.warm.useMutation();
   const createGift = trpc.gifts.create.useMutation({
-    onSuccess: (result: GiftRecord) => {
-      setGift(result as GiftRecord);
+    onSuccess: () => {
       toast.success("لینک شخصی‌ات آماده شد.");
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
   const uploadImage = trpc.gifts.uploadImage.useMutation();
-  const attachImage = trpc.gifts.attachImage.useMutation();
+  const attachImageMutation = trpc.gifts.attachImage.useMutation();
   const { data: birthdaySettings, isLoading: birthdaySettingsLoading } = trpc.birthday.settings.useQuery();
   const { data: birthdayPresets, isLoading: birthdayPresetsLoading } = trpc.birthday.presets.useQuery(undefined, { enabled: Boolean(birthdaySettings?.isEnabled) });
   const birthdayEnabled = Boolean(birthdaySettings?.isEnabled);
@@ -79,19 +78,20 @@ export default function Home() {
     setImagePreview(null);
   };
 
-  const attachImageInBackground = async (created: CreatedGiftRecord, file: File, target: "gift" | "birthdayCake" = "gift") => {
+  const attachImage = async (created: CreatedGiftRecord, file: File, target: "gift" | "birthdayCake" = "gift") => {
     setImageAttachmentStatus("uploading");
     setPendingImage({ created, file, target });
     try {
       const upload = await uploadImage.mutateAsync({ mimeType: file.type as "image/jpeg" | "image/png" | "image/webp", base64: await fileToBase64(file) });
-      const updated = await attachImage.mutateAsync({ giftToken: created.token, creatorToken: created.creatorToken, imageKey: upload.key, target });
+      const updated = await attachImageMutation.mutateAsync({ giftToken: created.token, creatorToken: created.creatorToken, imageKey: upload.key, target });
       setGift(updated);
       setPendingImage(null);
       setImageAttachmentStatus("attached");
       toast.success(target === "birthdayCake" ? "تصویر دلخواه کیک اضافه شد." : "تصویر هم به هدیه اضافه شد.");
     } catch (error) {
+      setGift(created);
       setImageAttachmentStatus("failed");
-      toast.error(error instanceof Error ? `لینک آماده است؛ افزودن تصویر انجام نشد: ${error.message}` : "لینک آماده است؛ افزودن تصویر انجام نشد.");
+      toast.error(error instanceof Error ? `افزودن تصویر انجام نشد: ${error.message}` : "افزودن تصویر انجام نشد.");
     }
   };
 
@@ -109,7 +109,11 @@ export default function Home() {
         return;
       }
       const created = await createGift.mutateAsync(createTextGiftPayload({ name, personalMessage: personalMessage.trim() || null, color, theme, expiresAt: expiresAt ? new Date(expiresAt) : null, experience, birthdayAge: experience === "birthday" ? Number(birthdayAge) : null, birthdayCakeKey: experience === "birthday" ? selectedPreset?.imageKey ?? null : null, birthdayHasBuiltinCandles: experience === "birthday" ? Boolean(selectedPreset?.hasBuiltinCandles) : false })) as CreatedGiftRecord;
-      if (imageFile) void attachImageInBackground(created, imageFile, experience === "birthday" ? "birthdayCake" : "gift");
+      // Link creation and image attachment must finish together. Showing the
+      // link while image_key is still null creates a race when it is opened
+      // immediately in another tab or device.
+      if (imageFile) await attachImage(created, imageFile, experience === "birthday" ? "birthdayCake" : "gift");
+      else setGift(created);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "ساخت هدیه انجام نشد.");
     } finally {
@@ -153,7 +157,7 @@ export default function Home() {
               <Button type="submit" disabled={isSubmitting || !name.trim() || (imageFile !== null && !expiresAt) || (experience === "birthday" && (!birthdayEnabled || !isValidBirthdayAge(Number(birthdayAge)) || !selectedPreset))} className="h-13 w-full rounded-xl bg-[linear-gradient(100deg,#9460ff,#ed5ea7,#587aff)] text-base font-black shadow-[0_14px_28px_rgba(132,92,255,.28)] transition hover:brightness-105"><Link2 className="h-5 w-5" />{isSubmitting ? "در حال آماده‌سازی لینک…" : experience === "birthday" ? "ساخت لینک تولد" : "ساخت لینک شخصی"}{isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}</Button>
               <p className="-mt-3 text-center text-[11px] leading-5 text-[#8276a8]">{PRIVACY_NOTICE}</p>
             </form>
-            {gift && <div className="mt-6 rounded-2xl border border-[#dfd6ff] bg-[#f7f4ff] p-4"><p className="text-sm font-black text-[#7248d4]">لینکت آماده است</p><div className="mt-3 flex items-center gap-2"><div dir="ltr" className="min-w-0 flex-1 truncate rounded-xl border border-[#ded8ff] bg-white px-3 py-2.5 text-xs text-[#6670bd]">{giftUrl(gift.token)}</div><Button onClick={copyLink} size="icon" className="h-10 w-10 shrink-0 rounded-xl bg-[#8d5df1] hover:bg-[#7247d5]" aria-label="کپی لینک"><Copy className="h-4 w-4" /></Button></div><a href={giftUrl(gift.token)} target="_blank" rel="noreferrer" className="mt-3 inline-block text-xs font-bold text-[#7353d9] hover:underline">باز کردن لینک ←</a>{imageAttachmentStatus === "uploading" && <p className="mt-3 flex items-center gap-2 text-xs font-bold text-[#7654dc]"><Loader2 className="h-3.5 w-3.5 animate-spin" />لینک آماده است؛ تصویر در پس‌زمینه افزوده می‌شود.</p>}{imageAttachmentStatus === "attached" && <p className="mt-3 text-xs font-bold text-[#3f8b6c]">تصویر با موفقیت به هدیه اضافه شد.</p>}{imageAttachmentStatus === "failed" && pendingImage && <button type="button" onClick={() => void attachImageInBackground(pendingImage.created, pendingImage.file)} className="mt-3 text-xs font-bold text-[#c14d79] underline underline-offset-4">افزودن تصویر ناموفق بود؛ دوباره تلاش کن</button>}</div>}
+            {gift && <div className="mt-6 rounded-2xl border border-[#dfd6ff] bg-[#f7f4ff] p-4"><p className="text-sm font-black text-[#7248d4]">لینکت آماده است</p><div className="mt-3 flex items-center gap-2"><div dir="ltr" className="min-w-0 flex-1 truncate rounded-xl border border-[#ded8ff] bg-white px-3 py-2.5 text-xs text-[#6670bd]">{giftUrl(gift.token)}</div><Button onClick={copyLink} size="icon" className="h-10 w-10 shrink-0 rounded-xl bg-[#8d5df1] hover:bg-[#7247d5]" aria-label="کپی لینک"><Copy className="h-4 w-4" /></Button></div><a href={giftUrl(gift.token)} target="_blank" rel="noreferrer" className="mt-3 inline-block text-xs font-bold text-[#7353d9] hover:underline">باز کردن لینک ←</a>{imageAttachmentStatus === "uploading" && <p className="mt-3 flex items-center gap-2 text-xs font-bold text-[#7654dc]"><Loader2 className="h-3.5 w-3.5 animate-spin" />در حال بارگذاری تصویر و اتصال آن به لینک…</p>}{imageAttachmentStatus === "attached" && <p className="mt-3 text-xs font-bold text-[#3f8b6c]">تصویر با موفقیت به هدیه اضافه شد.</p>}{imageAttachmentStatus === "failed" && pendingImage && <button type="button" onClick={() => void attachImage(pendingImage.created, pendingImage.file, pendingImage.target)} className="mt-3 text-xs font-bold text-[#c14d79] underline underline-offset-4">افزودن تصویر ناموفق بود؛ دوباره تلاش کن</button>}</div>}
           </section>
         </div>
 
