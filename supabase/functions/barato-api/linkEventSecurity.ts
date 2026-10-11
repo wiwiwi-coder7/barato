@@ -1,13 +1,10 @@
 export type ClientMetadata = {
   ip: string | null;
+  isCrawler: boolean;
   browser: string | null;
   operatingSystem: string | null;
   device: string | null;
 };
-
-function firstHeaderValue(value: string | null) {
-  return value?.split(",")[0]?.trim().replace(/^"|"$/g, "") || null;
-}
 
 function normalizeIp(value: string | null) {
   if (!value) return null;
@@ -30,17 +27,15 @@ export function isPublicIp(value: string | null) {
 }
 
 export function clientIpFromHeaders(headers: Headers) {
-  const candidates = [
-    headers.get("cf-connecting-ip"),
-    headers.get("x-real-ip"),
-    firstHeaderValue(headers.get("x-forwarded-for")),
-    headers.get("x-client-ip"),
-  ];
-  for (const candidate of candidates) {
-    const ip = normalizeIp(candidate);
-    if (isPublicIp(ip)) return ip;
-  }
-  return null;
+  // Supabase sits behind Cloudflare. Only this Cloudflare-controlled header
+  // is trusted; x-forwarded-for and x-real-ip can be supplied or rewritten by
+  // clients and intermediary proxies, so they must never be used as fallback.
+  const ip = normalizeIp(headers.get("cf-connecting-ip"));
+  return isPublicIp(ip) ? ip : null;
+}
+
+export function isCrawlerUserAgent(userAgent: string | null) {
+  return /bot|crawler|spider|slurp|archiver|headless|preview|linkexpander|facebookexternalhit|facebot|google-.*inspection|googlebot|bingbot|yandex|duckduckbot|baiduspider|bytespider|petalbot|linkedinbot|twitterbot|discordbot|telegrambot|whatsapp|skypeuripreview|embedly|quora link preview/i.test(userAgent ?? "");
 }
 
 export function clientMetadataFromRequest(headers: Headers): ClientMetadata {
@@ -48,7 +43,7 @@ export function clientMetadataFromRequest(headers: Headers): ClientMetadata {
   const browser = /edg\//i.test(agent) ? "Edge" : /opr\//i.test(agent) ? "Opera" : /firefox\//i.test(agent) ? "Firefox" : /chrome\//i.test(agent) ? "Chrome" : /safari\//i.test(agent) ? "Safari" : null;
   const operatingSystem = /iphone|ipad|ipod/i.test(agent) ? "iOS" : /android/i.test(agent) ? "Android" : /windows/i.test(agent) ? "Windows" : /mac os/i.test(agent) ? "macOS" : /linux/i.test(agent) ? "Linux" : null;
   const device = /ipad|tablet/i.test(agent) ? "tablet" : /iphone|ipod|android.*mobile|mobile/i.test(agent) ? "mobile" : agent ? "desktop" : null;
-  return { ip: clientIpFromHeaders(headers), browser, operatingSystem, device };
+  return { ip: clientIpFromHeaders(headers), isCrawler: isCrawlerUserAgent(agent), browser, operatingSystem, device };
 }
 
 export function eventRetentionCutoff(now = Date.now(), retentionDays = 30) {

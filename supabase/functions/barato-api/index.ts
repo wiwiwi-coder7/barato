@@ -115,6 +115,7 @@ async function resolveApproximateLocation(ip: string | null) {
 async function recordLinkEvent(giftId: number, eventType: "created" | "opened", request: Request) {
   try {
     const client = clientMetadataFromRequest(request.headers);
+    if (client.isCrawler) return;
     const location = await resolveApproximateLocation(client.ip);
     await db.from("gift_link_events").insert({
       gift_id: giftId,
