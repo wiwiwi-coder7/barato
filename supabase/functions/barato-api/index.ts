@@ -99,12 +99,22 @@ async function resolveApproximateLocation(ip: string | null) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 700);
   try {
-    const response = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: controller.signal, headers: { accept: "application/json" } });
-    if (!response.ok) return { city: null, region: null, country: null };
-    const payload = await response.json() as { success?: boolean; city?: unknown; region?: unknown; country?: unknown };
-    if (payload.success === false) return { city: null, region: null, country: null };
+    const [whoResponse, apiResponse] = await Promise.all([
+      fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: controller.signal, headers: { accept: "application/json" } }),
+      fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, { signal: controller.signal, headers: { accept: "application/json" } }),
+    ]);
+    if (!whoResponse.ok || !apiResponse.ok) return { city: null, region: null, country: null };
+    const who = await whoResponse.json() as { success?: boolean; city?: unknown; region?: unknown; country?: unknown };
+    const api = await apiResponse.json() as { error?: boolean; city?: unknown; region?: unknown; country_name?: unknown };
+    if (who.success === false || api.error) return { city: null, region: null, country: null };
     const text = (value: unknown) => typeof value === "string" && value.trim().length <= 128 ? value.trim() : null;
-    return { city: text(payload.city), region: text(payload.region), country: text(payload.country) };
+    const comparable = (value: string | null) => value?.trim().toLocaleLowerCase().replace(/[\s-]+/g, " ") ?? null;
+    const whoCity = text(who.city), apiCity = text(api.city), whoRegion = text(who.region), apiRegion = text(api.region), whoCountry = text(who.country), apiCountry = text(api.country_name);
+    return {
+      city: whoCity && apiCity && comparable(whoCity) === comparable(apiCity) ? whoCity : null,
+      region: whoRegion && apiRegion && comparable(whoRegion) === comparable(apiRegion) ? whoRegion : null,
+      country: whoCountry && apiCountry && comparable(whoCountry) === comparable(apiCountry) ? whoCountry : null,
+    };
   } catch {
     return { city: null, region: null, country: null };
   } finally {
