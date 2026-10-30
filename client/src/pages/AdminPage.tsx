@@ -26,6 +26,7 @@ import { Activity, BarChart3, CakeSlice, Copy, Eye, EyeOff, Heart, ImagePlus, Ke
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import ErikaBirthdayEditor from "@/components/ErikaBirthdayEditor";
 
 type EditingGift = Omit<Pick<GiftRecord, "id" | "name" | "message" | "personalMessage" | "imageKey" | "theme" | "expiresAt">, "color"> & {
   color: (typeof GIFT_COLOR_META)[number]["value"];
@@ -345,7 +346,7 @@ export default function AdminPage() {
           <div className="grid gap-4 md:grid-cols-3">{BIRTHDAY_IMAGE_FIELDS.map(({ field, label }) => { const imageUrl = birthdayImagePreviews[field] ?? birthdayImageUrl(birthdayDraft[field]); return <div key={field} className="space-y-2"><Label>{label}</Label>{imageUrl ? <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-[#e2dcff] bg-[#f7f4ff]"><img src={imageUrl} alt={`پیش‌نمایش ${label}`} className="h-full w-full object-cover" /><div className="absolute left-2 top-2 flex gap-2"><label className="grid h-8 w-8 cursor-pointer place-items-center rounded-full bg-white/90 text-[#7450d9]" aria-label={`جایگزینی ${label}`}><ImagePlus className="h-4 w-4" /><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={event => chooseBirthdayImage(field, event)} /></label><button type="button" onClick={() => { setBirthdayDraft({ ...birthdayDraft, [field]: null }); setBirthdayImageFiles(previous => ({ ...previous, [field]: undefined })); setBirthdayImagePreviews(previous => ({ ...previous, [field]: undefined })); }} className="grid h-8 w-8 place-items-center rounded-full bg-white/90 text-[#b94370]" aria-label={`حذف ${label}`}><X className="h-4 w-4" /></button></div></div> : <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#bcaaff] bg-[#f7f4ff] text-center"><ImagePlus className="h-5 w-5 text-[#8758ef]" /><span className="mt-1 text-sm font-bold text-[#5b4698]">انتخاب {label}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={event => chooseBirthdayImage(field, event)} /></label>}</div>; })}</div>
           <Button type="submit" disabled={updateBirthday.isPending || uploadImage.isPending || !birthdayDraft.catText.trim() || !birthdayDraft.cakeText.trim() || !birthdayDraft.motorText.trim()} className="h-11 rounded-xl bg-[linear-gradient(100deg,#9460ff,#ed5ea7,#587aff)] px-6 font-black hover:brightness-105">{(updateBirthday.isPending || uploadImage.isPending) && <Loader2 className="h-4 w-4 animate-spin" />} ذخیره‌ی محتوای تولد</Button>
         </form>}
-      </section></>}
+      </section><ErikaBirthdayEditor /></>}
 
       {adminSection === "links" && <section className="mt-9 rounded-[1.75rem] border border-[#e4deff] bg-white shadow-[0_15px_45px_rgba(100,78,188,.08)]">
         {giftsLoading ? <div className="grid min-h-56 place-items-center"><Loader2 className="h-6 w-6 animate-spin text-[#8758ef]" /></div> : giftRows.length === 0 ? (

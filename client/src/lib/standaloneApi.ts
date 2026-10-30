@@ -22,6 +22,8 @@ export type GiftLinkEvent = {
   device: string | null;
   createdAt: string;
 };
+export type ErikaLetter = { name: string; role: string; image: string; accent: string; message: string };
+export type ErikaBirthdayContent = { heroImageKey: string; finalLetterImageKey: string; musicKey: string; letters: ErikaLetter[]; updatedAt?: string };
 
 function readAdminToken() { return sessionStorage.getItem(ADMIN_TOKEN) ?? ""; }
 function endpoint(action: string, query?: Record<string, string>) { const value = new URL(API_ROOT); value.searchParams.set("action", action); Object.entries(query ?? {}).forEach(([key, item]) => value.searchParams.set(key, item)); return value.toString(); }
@@ -58,6 +60,7 @@ export const standaloneApi = {
     get: { useQuery: queryHook("birthday", "birthday", payload => payload.content) },
     presets: { useQuery: queryHook<BirthdayCakePreset[]>("birthday-cake-presets", "birthday-cake-presets", payload => payload.presets) },
     settings: { useQuery: queryHook<BirthdayPublicSettings>("birthday-public-settings", "birthday-public-settings", payload => payload.settings) },
+    erika: { useQuery: queryHook<ErikaBirthdayContent>("erika-birthday", "erika-birthday", payload => payload.content) },
   },
   admin: {
     login: { useMutation: useAdminLogin }, logout: { useMutation: useAdminLogout },
@@ -79,6 +82,11 @@ export const standaloneApi = {
         update: { useMutation: mutationHook<BirthdayCakePreset>("admin-birthday-preset-update", "admin-update-birthday-preset", "PATCH", payload => payload.preset) },
         delete: { useMutation: mutationHook("admin-birthday-preset-delete", "admin-delete-birthday-preset", "DELETE", payload => payload, input => ({ method: "DELETE", query: { id: String(input.id) } })) },
       },
+      erika: {
+        get: { useQuery: queryHook<ErikaBirthdayContent>("admin-erika-birthday", "admin-erika-birthday", payload => payload.content) },
+        update: { useMutation: mutationHook<ErikaBirthdayContent>("admin-erika-birthday-update", "admin-update-erika-birthday", "PATCH", payload => payload.content) },
+        upload: { useMutation: mutationHook<{ key: string }>("admin-erika-media-upload", "admin-upload-erika-media") },
+      },
     },
     update: { useMutation: mutationHook("admin-gift-update", "admin-update-gift", "PATCH", payload => payload.gift) },
     delete: { useMutation: mutationHook("admin-gift-delete", "admin-delete-gift", "DELETE", payload => payload, input => ({ method: "DELETE", query: { id: String(input.id) } })) },
@@ -91,6 +99,6 @@ export const standaloneApi = {
     const queryClient = useQueryClient();
     const invalidate = (key: string) => ({ invalidate: () => queryClient.invalidateQueries({ queryKey: [key] }) });
     const auth = { me: { invalidate: () => queryClient.invalidateQueries({ queryKey: ["auth-me"] }), setData: (_input: unknown, data: unknown) => queryClient.setQueryData(["auth-me", undefined], data) } };
-    return { auth, admin: { session: invalidate("admin-session"), list: invalidate("admin-gifts"), analytics: invalidate("admin-analytics"), birthday: { get: invalidate("admin-birthday"), publicSettings: invalidate("admin-birthday-public-settings"), presets: invalidate("admin-birthday-presets") } }, gifts: { getByToken: invalidate("gift-token") } };
+    return { auth, admin: { session: invalidate("admin-session"), list: invalidate("admin-gifts"), analytics: invalidate("admin-analytics"), birthday: { get: invalidate("admin-birthday"), publicSettings: invalidate("admin-birthday-public-settings"), presets: invalidate("admin-birthday-presets"), erika: { get: invalidate("admin-erika-birthday") } } }, gifts: { getByToken: invalidate("gift-token") } };
   },
 };

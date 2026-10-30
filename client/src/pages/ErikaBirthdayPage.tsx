@@ -1,17 +1,12 @@
 import { ArrowDown, CakeSlice, ChevronDown, Heart, Volume2, Wind } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { type ErikaBirthdayContent, type ErikaLetter } from "@/lib/standaloneApi";
+import { publicStorageUrl } from "@/lib/gift";
 
 type Phase = "cake" | "crash" | "letters";
 
-type CharacterLetter = {
-  name: string;
-  role: string;
-  image: string;
-  accent: string;
-  message: string;
-};
-
-const letters: CharacterLetter[] = [
+const defaultLetters: ErikaLetter[] = [
   {
     name: "Levi Ackerman",
     role: "کاپیتان جوخه‌ی شناسایی",
@@ -48,6 +43,9 @@ const letters: CharacterLetter[] = [
     message: "تولدت مبارک، اریکا! برای سال جدیدت آرزو می‌کنم دنیا رو با چشم‌هایی پر از امید ببینی و هیچ‌وقت کنجکاوی و رؤیاپردازی رو کنار نذاری. دنیا با همه‌ی سختی‌هاش هنوز پر از چیزهای قشنگیه که ارزش کشف کردن دارن. حتی کوچک‌ترین نور هم می‌تونه تاریکی بزرگی رو شکست بده. امیدوارم همیشه نور زندگی خودت باشی.",
   },
 ];
+
+const defaultContent: ErikaBirthdayContent = { heroImageKey: "/erika/erika-banner.png", finalLetterImageKey: "/erika/letter.png", musicKey: "/erika/music.mp3", letters: defaultLetters };
+function mediaUrl(key: string) { return key.startsWith("/") ? key : publicStorageUrl(key); }
 
 function CakeScene({ onBlow }: { onBlow: () => void }) {
   const [micMessage, setMicMessage] = useState<string | null>(null);
@@ -136,7 +134,7 @@ function CrashScene() {
   );
 }
 
-function LetterCard({ letter, index }: { letter: CharacterLetter; index: number }) {
+function LetterCard({ letter, index }: { letter: ErikaLetter; index: number }) {
   return (
     <article className="erika-letter-card" style={{ "--accent": letter.accent } as React.CSSProperties}>
       <div className="erika-character-panel">
@@ -154,7 +152,7 @@ function LetterCard({ letter, index }: { letter: CharacterLetter; index: number 
   );
 }
 
-function LettersScene() {
+function LettersScene({ content }: { content: ErikaBirthdayContent }) {
   return (
     <main dir="rtl" className="erika-letters-screen">
       <div className="erika-letter-glow" />
@@ -163,7 +161,7 @@ function LettersScene() {
         <div className="erika-now-playing"><Volume2 className="h-4 w-4" /> موسیقی برای تو در حال پخش است</div>
       </header>
       <section className="erika-hero-letter">
-        <img src="/erika/erika-banner.png" alt="ERIKA Wings of Freedom" />
+        <img src={mediaUrl(content.heroImageKey)} alt="ERIKA Wings of Freedom" />
         <p>برای یک روز، تمام دنیا را فراموش کن و فقط از زنده بودن، دوست داشته شدن و خودت بودن لذت ببر.</p>
         <div className="erika-scroll-prompt"><ArrowDown className="h-4 w-4" /> اسکرول کن، نامه‌ها منتظرند</div>
       </section>
@@ -171,12 +169,12 @@ function LettersScene() {
         <p className="erika-section-label">THE SCOUT REGIMENT · 30.10</p>
         <h2>نامه‌هایی از آن سوی دیوارها</h2>
         <p className="erika-section-intro">هرکدامشان چیزی برای گفتن به تو دارند، اریکا.</p>
-        {letters.map((letter, index) => <LetterCard key={letter.name} letter={letter} index={index} />)}
+        {content.letters.map((letter, index) => <LetterCard key={`${letter.name}-${index}`} letter={letter} index={index} />)}
       </section>
       <section className="erika-final-letter">
         <div className="erika-final-divider"><span>و در آخر، از طرف من</span></div>
         <h2>نامه‌ای که فقط برای توست</h2>
-        <img src="/erika/letter.png" alt="نامه‌ی دست‌نویس برای اریکا" />
+        <img src={mediaUrl(content.finalLetterImageKey)} alt="نامه‌ی دست‌نویس برای اریکا" />
         <p className="erika-final-signature">Happy birthday, erika <span>♥</span></p>
       </section>
       <footer className="erika-footer">FOR ERIKA · WITH LOVE · ALWAYS</footer>
@@ -185,12 +183,14 @@ function LettersScene() {
 }
 
 export default function ErikaBirthdayPage() {
+  const { data: erikaContent } = trpc.birthday.erika.useQuery();
   const [phase, setPhase] = useState<Phase>("cake");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const content = erikaContent ?? defaultContent;
 
   const startMusicAndBlow = () => {
     if (!audioRef.current) {
-      audioRef.current = new Audio("/erika/music.mp3");
+      audioRef.current = new Audio(mediaUrl(content.musicKey));
       audioRef.current.loop = true;
       audioRef.current.volume = 0.68;
     }
@@ -203,5 +203,5 @@ export default function ErikaBirthdayPage() {
 
   if (phase === "cake") return <CakeScene onBlow={startMusicAndBlow} />;
   if (phase === "crash") return <CrashScene />;
-  return <LettersScene />;
+  return <LettersScene content={content} />;
 }

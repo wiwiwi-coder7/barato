@@ -37,6 +37,9 @@ function toPublicBirthdaySettings(row: Record<string, unknown>) {
 function toCakePreset(row: Record<string, unknown>) {
   return { id: Number(row.id), slug: row.slug, label: row.label, imageKey: row.image_key, hasBuiltinCandles: Boolean(row.has_builtin_candles), sortOrder: Number(row.sort_order), isActive: Boolean(row.is_active) };
 }
+function toErika(row: Record<string, unknown>) {
+  return { heroImageKey: row.hero_image_key, finalLetterImageKey: row.final_letter_image_key, musicKey: row.music_key, letters: row.letters, updatedAt: row.updated_at };
+}
 function verify(password: string, stored: string) {
   const [algorithm, salt, key] = stored.split("$");
   if (algorithm !== "scrypt" || !salt || !key) return false;
@@ -66,6 +69,15 @@ function imageHasRequiredExpiration(imageKey: unknown, expiresAt: unknown) {
   return Number.isFinite(timestamp) && timestamp > Date.now();
 }
 function isValidSortOrder(value: unknown) { return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 999; }
+function isValidErikaMediaRef(value: unknown) { return typeof value === "string" && value.length <= 512 && /^(?:\/[A-Za-z0-9._/-]+|[A-Za-z0-9._/-]+)$/.test(value); }
+function isValidErikaLetter(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const letter = value as Record<string, unknown>;
+  return isSafeText(letter.name, 100) && isSafeText(letter.role, 160) && isValidErikaMediaRef(letter.image) && typeof letter.accent === "string" && /^#[0-9A-Fa-f]{6}$/.test(letter.accent) && isSafeText(letter.message, 3000);
+}
+function isValidErikaContent(value: Record<string, unknown>) {
+  return isValidErikaMediaRef(value.heroImageKey) && isValidErikaMediaRef(value.finalLetterImageKey) && isValidErikaMediaRef(value.musicKey) && Array.isArray(value.letters) && value.letters.length > 0 && value.letters.length <= 12 && value.letters.every(isValidErikaLetter);
+}
 async function birthdayPublicSettings() {
   const { data, error } = await db.from("birthday_public_settings").select("*").eq("setting_key", "public").single();
   if (error) throw new Error(error.message);
@@ -206,12 +218,32 @@ Deno.serve(async request => {
       return json({ content: data ? toBirthday(data) : null });
     }
 
+    if (action === "erika-birthday") {
+      const { data, error } = await db.from("erika_birthday_content").select("*").eq("id", 1).single();
+      if (error) throw new Error(error.message);
+      return json({ content: toErika(data) });
+    }
+
     if (action === "upload-image" && request.method === "POST") {
       const body = await request.json();
       if (!["image/jpeg", "image/png", "image/webp"].includes(body.mimeType) || typeof body.base64 !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.base64) || body.base64.length > 1_400_000) return json({ error: "INVALID_IMAGE" }, 400);
       const bytes = Buffer.from(body.base64, "base64");
       if (!bytes.length || bytes.length > 1_000_000) return json({ error: "INVALID_IMAGE" }, 400);
       const key = makeKey(body.mimeType);
+      const { error } = await db.storage.from("gift-media").upload(key, bytes, { contentType: body.mimeType, upsert: false, cacheControl: "31536000" });
+      if (error) throw new Error(error.message);
+      return json({ key });
+    }
+
+    if (action === "admin-upload-erika-media" && request.method === "POST") {
+      await requireAdmin(request);
+      const body = await request.json();
+      const allowed = ["image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg"];
+      if (!allowed.includes(body.mimeType) || typeof body.base64 !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.base64) || body.base64.length > 12_000_000) return json({ error: "INVALID_ERIKA_MEDIA" }, 400);
+      const bytes = Buffer.from(body.base64, "base64");
+      if (!bytes.length || bytes.length > 8_000_000) return json({ error: "INVALID_ERIKA_MEDIA" }, 400);
+      const extension = body.mimeType.startsWith("audio/") ? (body.mimeType.includes("mpeg") || body.mimeType.includes("mp3") ? "mp3" : body.mimeType.includes("wav") ? "wav" : "ogg") : body.mimeType === "image/jpeg" ? "jpg" : body.mimeType === "image/png" ? "png" : "webp";
+      const key = `erika/${crypto.randomUUID()}.${extension}`;
       const { error } = await db.storage.from("gift-media").upload(key, bytes, { contentType: body.mimeType, upsert: false, cacheControl: "31536000" });
       if (error) throw new Error(error.message);
       return json({ key });
@@ -309,6 +341,15 @@ Deno.serve(async request => {
       return json({ success: true });
     }
     if (action === "admin-birthday") { await requireAdmin(request); const { data, error } = await db.from("birthday_contents").select("*").eq("owner", "edi").single(); if (error) throw new Error(error.message); return json({ content: toBirthday(data) }); }
+    if (action === "admin-erika-birthday") { await requireAdmin(request); const { data, error } = await db.from("erika_birthday_content").select("*").eq("id", 1).single(); if (error) throw new Error(error.message); return json({ content: toErika(data) }); }
+    if (action === "admin-update-erika-birthday" && request.method === "PATCH") {
+      await requireAdmin(request);
+      const body = await request.json();
+      if (!isValidErikaContent(body)) return json({ error: "INVALID_ERIKA_CONTENT" }, 400);
+      const { data, error } = await db.from("erika_birthday_content").update({ hero_image_key: body.heroImageKey, final_letter_image_key: body.finalLetterImageKey, music_key: body.musicKey, letters: body.letters, updated_at: new Date().toISOString() }).eq("id", 1).select().single();
+      if (error) throw new Error(error.message);
+      return json({ content: toErika(data) });
+    }
     if (action === "admin-update-gift" && request.method === "PATCH") { await requireAdmin(request); const body = await request.json(); if (!Number.isInteger(body.id) || !validGift(body)) return json({ error: "INVALID_GIFT" }, 400); const { data, error } = await db.from("gifts").update({ name: body.name.trim(), message: body.message.trim(), personal_message: body.personalMessage?.trim() || null, image_key: body.imageKey ?? null, color: body.color, theme: body.theme, expires_at: body.expiresAt ? new Date(body.expiresAt).toISOString() : null, updated_at: new Date().toISOString() }).eq("id", body.id).select().maybeSingle(); if (error) throw new Error(error.message); return json({ gift: data ? toGift(data) : null }); }
     if (action === "admin-delete-gift" && request.method === "DELETE") { await requireAdmin(request); const id = Number(requestUrl.searchParams.get("id")); if (!Number.isInteger(id) || id < 1) return json({ error: "INVALID_GIFT" }, 400); const { error } = await db.from("gifts").delete().eq("id", id); if (error) throw new Error(error.message); return json({ success: true }); }
     if (action === "admin-update-birthday" && request.method === "PATCH") { await requireAdmin(request); const body = await request.json(); if (![body.catText, body.cakeText, body.motorText].every(value => isSafeText(value, 2000)) || ![body.catImageKey, body.cakeImageKey, body.motorImageKey].every(value => value == null || isValidImageKey(value))) return json({ error: "INVALID_BIRTHDAY" }, 400); const { data, error } = await db.from("birthday_contents").update({ cat_text: body.catText.trim(), cake_text: body.cakeText.trim(), motor_text: body.motorText.trim(), cat_image_key: body.catImageKey ?? null, cake_image_key: body.cakeImageKey ?? null, motor_image_key: body.motorImageKey ?? null, updated_at: new Date().toISOString() }).eq("owner", "edi").select().single(); if (error) throw new Error(error.message); return json({ content: toBirthday(data) }); }
