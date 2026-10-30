@@ -8,6 +8,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { LocaleProvider } from "./contexts/LocaleContext";
 import AdminPage from "./pages/AdminPage";
 import BirthdayPage from "./pages/BirthdayPage";
+import ErikaBirthdayPage from "./pages/ErikaBirthdayPage";
 import GiftPage from "./pages/GiftPage";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
@@ -17,6 +18,7 @@ function Router() {
     <WouterRouter hook={useHashLocation}>
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/birthday-erika" component={ErikaBirthdayPage} />
         <Route path={BIRTHDAY_ROUTE} component={BirthdayPage} />
         <Route path="/gift/:token" component={GiftPage} />
         <Route path="/admin" component={AdminPage} />
